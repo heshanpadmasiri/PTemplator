@@ -42,7 +42,6 @@ pub struct Position {
 
 impl fmt::Debug for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: also show the file name in error
         write!(f, "{}:{}", self.line, self.column)
     }
 }
