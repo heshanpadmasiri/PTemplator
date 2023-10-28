@@ -10,7 +10,7 @@ TODO: describe the template
     3. Substitutor
     4. Text Generator
 ### Tokenizer
-+ Input : `String`
++ Input : `String` (NOTE: our tokens are not multiline)
 + Output : `[Token]` where Token is either a word (a continuous sequence of non punctuation characters) or a punctuation
 
 ### Parser
