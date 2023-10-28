@@ -83,7 +83,7 @@ fn main() {
     let tokens = tokenize_file(&file_path);
     match tokens {
         Err(err) => print_error(err, &file_path),
-        Ok(tokens) => println!("{:?}", tokens),
+        Ok(tokens) => println!("{:?} \n {}", tokens, reconstruct_text(&tokens)),
     }
 }
 
@@ -98,10 +98,7 @@ fn tokenize_file(file_path: &path::Path) -> Result<Vec<Token>, ParseError> {
                 .lines()
                 .enumerate()
                 .try_fold(Vec::new(), |acc, (i, l)| match l {
-                    Ok(t) => Ok(acc
-                        .into_iter()
-                        .chain(create_tokens(t, i)?.into_iter())
-                        .collect()),
+                    Ok(t) => Ok(acc.into_iter().chain(create_tokens(t, i)?).collect()),
                     Err(_) => Err(ParseError::FailedToReadLine(i)),
                 })
         }
@@ -162,7 +159,7 @@ fn create_tokens(text: String, line: usize) -> Result<Vec<Token>, ParseError> {
             }
         }
     }
-    Ok(tokens.into_iter().filter_map(|opt| opt).collect())
+    Ok(tokens.into_iter().flatten().collect())
 }
 
 fn create_token(chars: &[char], line: usize, start: usize, end: usize) -> Option<Token> {
