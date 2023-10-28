@@ -1,3 +1,4 @@
+use std::env;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -29,7 +30,7 @@ impl fmt::Debug for ParseError {
 }
 
 fn print_error(err: ParseError, file_path: &path::Path) {
-    eprintln!("{:?}:{:?}", file_path, err);
+    eprintln!("{}:{:?}", file_path.to_str().unwrap(), err);
 }
 
 // NOTE: positions are starting from 0
@@ -72,8 +73,18 @@ impl std::string::ToString for Token {
     fn to_string(&self) -> String {
         match self {
             Token::Word { text, .. } => text.to_string(),
-            Token::Punctuation { value, .. } => value.to_string()
+            Token::Punctuation { value, .. } => value.to_string(),
         }
+    }
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let file_path = path::PathBuf::from(args[1].clone());
+    let tokens = tokenize_file(&file_path);
+    match tokens {
+        Err(err) => print_error(err, &file_path),
+        Ok(tokens) => println!("{:?}", tokens),
     }
 }
 
@@ -105,9 +116,10 @@ fn reconstruct_text(tokens: &[Token]) -> String {
     let mut parts: Vec<String> = vec![];
     for token in tokens {
         let Position { line, column } = token.start_pos();
-        if line > current_line {
-            current_line = line;
+        while current_line < line {
             parts.push("\n".to_string());
+            current_line += 1;
+            current_column = 0;
         }
         while current_column < column {
             parts.push(" ".to_string());
@@ -131,6 +143,9 @@ fn create_tokens(text: String, line: usize) -> Result<Vec<Token>, ParseError> {
                 tokens.push(create_token(&char_buffer, line, start, i));
                 char_buffer.clear();
                 start = i + 1;
+            }
+            c if c.is_whitespace() => {
+                return Err(ParseError::UnexpectedToken(Position { line, column: i }));
             }
             c if c.is_ascii_punctuation() => {
                 // Add chars upto this
@@ -188,10 +203,6 @@ fn create_token(chars: &[char], line: usize, start: usize, end: usize) -> Option
     }
 }
 
-fn main() {
-    println!("Hello, world!");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,6 +229,25 @@ mod tests {
         let tokens = create_tokens(l.clone(), 0).unwrap();
         let r = reconstruct_text(&tokens);
         assert_eq!(r, l);
+    }
+
+    #[test]
+    fn test_roundtrip_simple_file() {
+        let file_path = path::PathBuf::from("./test_corpus/simple.txt");
+        let tokens = tokenize_file(&file_path).unwrap();
+        let expected_text = reconstruct_text(&tokens);
+        let actual_text = read_file_as_string(&file_path);
+        assert_eq!(expected_text, actual_text);
+    }
+
+    fn read_file_as_string(path: &path::Path) -> String {
+        let file = File::open(path).unwrap();
+        let reader = BufReader::new(file);
+        reader
+            .lines()
+            .map(|l| l.unwrap())
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 
     fn create_word(t: &str, start: usize) -> crate::Token {
