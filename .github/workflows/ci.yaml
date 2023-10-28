@@ -1,0 +1,77 @@
+name: unit test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  changes:
+      runs-on: ubuntu-latest
+      name: Check changes
+      outputs:
+        changed: ${{ steps.filter.outputs.src }}
+      steps:
+        - uses: actions/checkout@v3
+          name: Checkout project to determine changed files
+          with:
+            fetch-depth: 50
+        - uses: dorny/paths-filter@v2
+          id: filter
+          with:
+            base: main
+            filters: |
+              src:
+                - 'server/**'
+  test:
+    runs-on: ${{ matrix.os }}
+    needs: [changes]
+    if: ${{ needs.changes.outputs.changed == 'true' }}
+    defaults:
+      run:
+        working-directory: ./server
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            src:
+              - 'server/**'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: rustfmt, clippy
+      - name: Install protoc linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install protobuf-compiler
+      - name: Install protoc Mac
+        if: runner.os == 'macOS'
+        run: |
+          brew install protobuf
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --manifest-path ./server/Cargo.toml
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path ./server/Cargo.toml
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --check --manifest-path ./server/Cargo.toml
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path ./server/Cargo.toml -- -D warnings
