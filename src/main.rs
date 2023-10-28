@@ -1,6 +1,12 @@
 use std::fmt;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path;
 enum ParseError {
     UnexpectedToken(Position),
+    InvalidFilePath,
+    FailedToOpenFile,
+    FailedToReadLine(usize),
 }
 
 impl fmt::Debug for ParseError {
@@ -9,13 +15,25 @@ impl fmt::Debug for ParseError {
             Self::UnexpectedToken(pos) => {
                 write!(f, "{:?} : Unexpected token", pos)
             }
+            Self::InvalidFilePath => {
+                write!(f, ": Invalid file path")
+            }
+            Self::FailedToOpenFile => {
+                write!(f, ": Failed to open file")
+            }
+            Self::FailedToReadLine(l) => {
+                write!(f, "{}: Failed to read line", l)
+            }
         }
     }
 }
 
-// TODO: also include the file path
+fn print_error(err: ParseError, file_path: &path::Path) {
+    eprintln!("{:?}:{:?}", file_path, err);
+}
+
 // NOTE: positions are starting from 0
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Position {
     line: usize,
     column: usize,
@@ -41,10 +59,72 @@ pub enum Token {
     },
 }
 
+impl Token {
+    fn start_pos(&self) -> Position {
+        match self {
+            Token::Word { start_pos, .. } => *start_pos,
+            Token::Punctuation { pos, .. } => *pos,
+        }
+    }
+}
+
+impl std::string::ToString for Token {
+    fn to_string(&self) -> String {
+        match self {
+            Token::Word { text, .. } => text.to_string(),
+            Token::Punctuation { value, .. } => value.to_string()
+        }
+    }
+}
+
+fn tokenize_file(file_path: &path::Path) -> Result<Vec<Token>, ParseError> {
+    if !file_path.is_file() {
+        return Err(ParseError::InvalidFilePath);
+    }
+    match File::open(file_path) {
+        Ok(file) => {
+            let reader = BufReader::new(file);
+            reader
+                .lines()
+                .enumerate()
+                .try_fold(Vec::new(), |acc, (i, l)| match l {
+                    Ok(t) => Ok(acc
+                        .into_iter()
+                        .chain(create_tokens(t, i)?.into_iter())
+                        .collect()),
+                    Err(_) => Err(ParseError::FailedToReadLine(i)),
+                })
+        }
+        Err(_) => Err(ParseError::FailedToOpenFile),
+    }
+}
+
+fn reconstruct_text(tokens: &[Token]) -> String {
+    let mut current_line = 0;
+    let mut current_column = 0;
+    let mut parts: Vec<String> = vec![];
+    for token in tokens {
+        let Position { line, column } = token.start_pos();
+        if line > current_line {
+            current_line = line;
+            parts.push("\n".to_string());
+        }
+        while current_column < column {
+            parts.push(" ".to_string());
+            current_column += 1;
+        }
+        let part = token.to_string();
+        current_column += part.len();
+        parts.push(part);
+    }
+    parts.concat()
+}
+
 fn create_tokens(text: String, line: usize) -> Result<Vec<Token>, ParseError> {
     let mut char_buffer = vec![];
     let mut tokens = vec![];
     let mut start = 0;
+    // TODO: turn in to iterator
     for (i, char) in text.chars().enumerate() {
         match char {
             ' ' => {
@@ -117,7 +197,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn can_tokenize_simple_line() {
+    fn test_tokenize_simple_line() {
         let l = "Hello world!".to_string();
         let tokens = create_tokens(l, 0).unwrap();
         let expected = vec![
@@ -130,6 +210,14 @@ mod tests {
         for i in 0..expected.len() {
             assert_eq!(tokens[i], expected[i]);
         }
+    }
+
+    #[test]
+    fn test_roundtrip_simple_line() {
+        let l = "Hello world!".to_string();
+        let tokens = create_tokens(l.clone(), 0).unwrap();
+        let r = reconstruct_text(&tokens);
+        assert_eq!(r, l);
     }
 
     fn create_word(t: &str, start: usize) -> crate::Token {
