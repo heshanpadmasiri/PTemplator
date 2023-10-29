@@ -4,15 +4,25 @@ use std::io::{BufRead, BufReader};
 use std::path;
 
 mod front;
-use front::{reconstruct_text, ParseError, Token, create_tokens};
+use front::{create_tokens, parse_tokens, reconstruct_text, ParseError, Token};
+
+use crate::front::SymbolTable;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let file_path = path::PathBuf::from(args[1].clone());
-    let tokens = tokenize_file(&file_path);
-    match tokens {
+    match tokenize_file(&file_path) {
         Err(err) => print_error(err, &file_path),
-        Ok(tokens) => println!("{:?} \n {}", tokens, reconstruct_text(&tokens)),
+        Ok(tokens) => {
+            println!("{:?} \n {}", &tokens, reconstruct_text(&tokens));
+            // TODO: get the symbols from the command line argument
+            match parse_tokens(&tokens, &SymbolTable::new(&vec![], &vec![])) {
+                Err(err) => print_error(err, &file_path),
+                Ok(symbols) => {
+                    println!("{:?}", &symbols);
+                }
+            }
+        }
     }
 }
 

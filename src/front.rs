@@ -188,7 +188,7 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
-    fn new(variables: &[(&str, &str)], files: &[(&str, &std::path::Path)]) -> SymbolTable {
+    pub fn new(variables: &[(&str, &str)], files: &[(&str, &std::path::Path)]) -> SymbolTable {
         let variables = variables
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -209,8 +209,7 @@ impl SymbolTable {
     }
 }
 
-// TODO: pass in the symbol table
-fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbol>, ParseError> {
+pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbol>, ParseError> {
     match tokens {
         [] => Ok(vec![]),
         [Token::Word { text, .. }, rest @ ..] => Ok(vec![Symbol::Word {
@@ -375,7 +374,6 @@ mod tests {
             assert!(false, "Expected an error");
         }
     }
-
 
     #[test]
     fn test_parsing_spread() {
