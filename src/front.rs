@@ -4,6 +4,8 @@ pub enum ParseError {
     UnexpectedToken(Position),
     InvalidFilePath,
     FailedToOpenFile,
+    VariableNotFound(Position),
+    FileNotFound(Position),
     FailedToReadLine(usize),
 }
 
@@ -22,6 +24,12 @@ impl fmt::Debug for ParseError {
             Self::FailedToReadLine(l) => {
                 write!(f, "{}: Failed to read line", l)
             }
+            Self::VariableNotFound(pos) => {
+                write!(f, "{:?} : variable not found", pos)
+            }
+            Self::FileNotFound(pos) => {
+                write!(f, "{:?} : file not found", pos)
+            }
         }
     }
 }
@@ -39,6 +47,7 @@ impl fmt::Debug for Position {
     }
 }
 
+// TODO: introduce range
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Word {
@@ -173,15 +182,42 @@ pub enum Symbol {
     Spread { identifier: Identifier },
 }
 
+pub struct SymbolTable {
+    variables: std::collections::HashMap<Identifier, String>,
+    files: std::collections::HashMap<Identifier, std::path::PathBuf>,
+}
+
+impl SymbolTable {
+    fn new(variables: &[(&str, &str)], files: &[(&str, &std::path::Path)]) -> SymbolTable {
+        let variables = variables
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let files = files
+            .iter()
+            .map(|(identifier, path)| (identifier.to_string(), std::path::PathBuf::from(path)))
+            .collect();
+        SymbolTable { variables, files }
+    }
+
+    fn has_variable(&self, identifier: &str) -> bool {
+        return self.variables.contains_key(identifier);
+    }
+
+    fn has_file(&self, identifier: &str) -> bool {
+        return self.files.contains_key(identifier);
+    }
+}
+
 // TODO: pass in the symbol table
-fn parse_tokens(tokens: &[Token]) -> Result<Vec<Symbol>, ParseError> {
+fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbol>, ParseError> {
     match tokens {
         [] => Ok(vec![]),
         [Token::Word { text, .. }, rest @ ..] => Ok(vec![Symbol::Word {
             text: text.to_string(),
         }]
         .into_iter()
-        .chain(parse_tokens(rest)?.into_iter())
+        .chain(parse_tokens(rest, symbols)?.into_iter())
         .collect()),
         [Token::Punctuation {
             value: '$',
@@ -192,13 +228,16 @@ fn parse_tokens(tokens: &[Token]) -> Result<Vec<Symbol>, ParseError> {
             value: '}',
             pos: end_pos,
         }, rest @ ..] => {
-            // TODO: check if the identifier is valid
-            Ok(vec![Symbol::Replace {
-                identifier: identifier.to_string(),
-            }]
-            .into_iter()
-            .chain(parse_tokens(rest)?.into_iter())
-            .collect())
+            if symbols.has_variable(identifier) {
+                Ok(vec![Symbol::Replace {
+                    identifier: identifier.to_string(),
+                }]
+                .into_iter()
+                .chain(parse_tokens(rest, symbols)?.into_iter())
+                .collect())
+            } else {
+                Err(ParseError::VariableNotFound(start_pos.clone()))
+            }
         }
         [Token::Punctuation {
             value: '$',
@@ -209,26 +248,32 @@ fn parse_tokens(tokens: &[Token]) -> Result<Vec<Symbol>, ParseError> {
             value: '}',
             pos: end_pos,
         }, rest @ ..] => {
-            // TODO: check if the identifier is valid
-            Ok(vec![Symbol::Spread {
-                identifier: identifier.to_string(),
-            }]
-            .into_iter()
-            .chain(parse_tokens(rest)?.into_iter())
-            .collect())
+            if symbols.has_file(identifier) {
+                // TODO: check if the identifier is valid
+                Ok(vec![Symbol::Spread {
+                    identifier: identifier.to_string(),
+                }]
+                .into_iter()
+                .chain(parse_tokens(rest, symbols)?.into_iter())
+                .collect())
+            } else {
+                Err(ParseError::FileNotFound(start_pos.clone()))
+            }
         }
         [Token::Punctuation { value, .. }, rest @ ..] => Ok(vec![Symbol::Word {
             text: value.to_string(),
         }]
         .into_iter()
-        .chain(parse_tokens(rest)?.into_iter())
+        .chain(parse_tokens(rest, symbols)?.into_iter())
         .collect()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::front::{create_tokens, reconstruct_text, Symbol};
+    use std::path::PathBuf;
+
+    use crate::front::{create_tokens, reconstruct_text, ParseError, Symbol, SymbolTable};
 
     use super::{parse_tokens, Position};
 
@@ -258,7 +303,11 @@ mod tests {
 
     #[test]
     fn test_parsing_just_text() {
-        let symbols = parse_tokens(&create_tokens("Hello world!".to_string(), 0).unwrap()).unwrap();
+        let symbols = parse_tokens(
+            &create_tokens("Hello world!".to_string(), 0).unwrap(),
+            &SymbolTable::new(&vec![], &vec![]),
+        )
+        .unwrap();
         assert_eq!(
             symbols,
             vec![
@@ -277,8 +326,11 @@ mod tests {
 
     #[test]
     fn test_parsing_replace() {
-        let symbols =
-            parse_tokens(&create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap()).unwrap();
+        let symbols = parse_tokens(
+            &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
+            &SymbolTable::new(&vec![("var1", ""), ("var2", "")], &vec![]),
+        )
+        .unwrap();
         assert_eq!(
             symbols,
             vec![
@@ -299,9 +351,45 @@ mod tests {
     }
 
     #[test]
+    fn test_parsing_replace_err() {
+        let symbols = parse_tokens(
+            &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
+            &SymbolTable::new(&vec![], &vec![]),
+        );
+        if let Err(ParseError::VariableNotFound(Position { line: 0, column: 6 })) = symbols {
+            assert!(true)
+        } else {
+            assert!(false, "Expected an error");
+        }
+    }
+
+    #[test]
+    fn test_parsing_spread_err() {
+        let symbols = parse_tokens(
+            &create_tokens("Hello ${...var1}! ${var2}".to_string(), 0).unwrap(),
+            &SymbolTable::new(&vec![], &vec![]),
+        );
+        if let Err(ParseError::FileNotFound(Position { line: 0, column: 6 })) = symbols {
+            assert!(true)
+        } else {
+            assert!(false, "Expected an error");
+        }
+    }
+
+
+    #[test]
     fn test_parsing_spread() {
-        let symbols =
-            parse_tokens(&create_tokens("Hello ${...var1}! ${...var2}".to_string(), 0).unwrap()).unwrap();
+        let symbols = parse_tokens(
+            &create_tokens("Hello ${...var1}! ${...var2}".to_string(), 0).unwrap(),
+            &SymbolTable::new(
+                &vec![],
+                &vec![
+                    ("var1", PathBuf::from("").as_path()),
+                    ("var2", PathBuf::from("").as_path()),
+                ],
+            ),
+        )
+        .unwrap();
         assert_eq!(
             symbols,
             vec![
