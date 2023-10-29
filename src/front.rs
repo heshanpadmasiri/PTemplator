@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::{Range, Position, SymbolTable, Symbol, Token};
+
 pub enum ParseError {
     UnexpectedToken(Position),
     InvalidFilePath,
@@ -34,12 +36,6 @@ impl fmt::Debug for ParseError {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct Range {
-    start_pos: Position,
-    end_pos: Position,
-}
-
 impl fmt::Debug for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}:{:?}", self.start_pos, self.end_pos)
@@ -67,12 +63,6 @@ impl From<&Position> for Range {
     }
 }
 
-// NOTE: positions are starting from 0
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct Position {
-    line: usize,
-    column: usize,
-}
 
 impl Position {
     fn next(&self) -> Position {
@@ -87,12 +77,6 @@ impl fmt::Debug for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.line, self.column)
     }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Token {
-    Word { text: String, range: Range },
-    Punctuation { value: char, pos: Position },
 }
 
 impl Token {
@@ -204,51 +188,6 @@ fn create_token(chars: &[char], line: usize, start: usize, end: usize) -> Option
                 range: Range { start_pos, end_pos },
             })
         }
-    }
-}
-
-pub type Identifier = String;
-
-#[derive(Debug, PartialEq)]
-pub enum Symbol {
-    Word {
-        text: String,
-        range: Range,
-    },
-
-    Replace {
-        identifier: Identifier,
-        range: Range,
-    },
-
-    Spread {
-        identifier: Identifier,
-        range: Range,
-    },
-}
-
-pub struct SymbolTable {
-    variables: std::collections::HashMap<Identifier, String>,
-}
-
-impl SymbolTable {
-    pub fn new<S: AsRef<str>>(variables: &[(S, S)]) -> SymbolTable {
-        let variables = variables
-            .iter()
-            .map(|(k, v)| (k.as_ref().to_string(), v.as_ref().to_string()))
-            .collect();
-        SymbolTable { variables }
-    }
-
-    fn has_variable(&self, identifier: &str) -> bool {
-        self.variables.contains_key(identifier)
-    }
-
-    // XXX: this is public so that we can use this for tests in the driver. Need to think of a
-    // better way to do this
-    #[cfg(test)]
-    pub fn get_variable(&self, identifier: &str) -> Option<String> {
-        self.variables.get(identifier).cloned()
     }
 }
 

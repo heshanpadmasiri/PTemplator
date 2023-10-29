@@ -3,11 +3,72 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path;
 
-mod front;
 mod back;
-use front::{create_tokens, parse_tokens, reconstruct_text, Identifier, ParseError, Token};
+mod front;
+use front::{create_tokens, parse_tokens, reconstruct_text, ParseError};
 
-use crate::front::SymbolTable;
+use crate::back::to_output_tokens;
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Range {
+    start_pos: Position,
+    end_pos: Position,
+}
+
+// NOTE: positions are starting from 0
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Position {
+    line: usize,
+    column: usize,
+}
+
+type Identifier = String;
+
+#[derive(Debug, PartialEq)]
+pub enum Symbol {
+    Word {
+        text: String,
+        range: Range,
+    },
+
+    Replace {
+        identifier: Identifier,
+        range: Range,
+    },
+
+    Spread {
+        identifier: Identifier,
+        range: Range,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Token {
+    Word { text: String, range: Range },
+    Punctuation { value: char, pos: Position },
+}
+
+pub struct SymbolTable {
+    variables: std::collections::HashMap<Identifier, String>,
+}
+
+impl SymbolTable {
+    pub fn new<S: AsRef<str>>(variables: &[(S, S)]) -> SymbolTable {
+        let variables = variables
+            .iter()
+            .map(|(k, v)| (k.as_ref().to_string(), v.as_ref().to_string()))
+            .collect();
+        SymbolTable { variables }
+    }
+
+    fn has_variable(&self, identifier: &str) -> bool {
+        self.variables.contains_key(identifier)
+    }
+
+    pub fn get_variable(&self, identifier: &str) -> Option<String> {
+        self.variables.get(identifier).cloned()
+    }
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -15,15 +76,13 @@ fn main() {
     let symbol_table = symbol_table_from_args(&args[2..]);
     match tokenize_file(&file_path) {
         Err(err) => print_error(err, &file_path),
-        Ok(tokens) => {
-            println!("{:?} \n {}", &tokens, reconstruct_text(&tokens));
-            match parse_tokens(&tokens, &symbol_table) {
-                Err(err) => print_error(err, &file_path),
-                Ok(symbols) => {
-                    println!("{:?}", &symbols);
-                }
+        Ok(tokens) => match parse_tokens(&tokens, &symbol_table) {
+            Err(err) => print_error(err, &file_path),
+            Ok(symbols) => {
+                let output_tokens = to_output_tokens(&symbols, &symbol_table);
+                println!("{}", reconstruct_text(&output_tokens));
             }
-        }
+        },
     }
 }
 
@@ -89,7 +148,10 @@ fn tokenize_file(file_path: &path::Path) -> Result<Vec<Token>, ParseError> {
 mod test {
     use std::{fs::File, io::BufRead, io::BufReader, path};
 
-    use crate::symbol_table_from_args;
+    use crate::{
+        front::{create_tokens, parse_tokens, reconstruct_text},
+        symbol_table_from_args, to_output_tokens, SymbolTable,
+    };
 
     #[test]
     fn test_roundtrip_simple_file() {
@@ -108,6 +170,16 @@ mod test {
             .collect();
         let symbols = symbol_table_from_args(&args);
         assert_eq!(symbols.get_variable("var2").unwrap(), "2".to_string());
+    }
+
+    #[test]
+    fn test_roundtrip_replace_simple() {
+        let symbol_table = SymbolTable::new::<&str>(&[("var1", "world")]);
+        let tokens = create_tokens("Hello ${var1}!".to_string(), 0).unwrap();
+        let symbols = parse_tokens(&tokens, &symbol_table).unwrap();
+        let output_tokens = to_output_tokens(&symbols, &symbol_table);
+        let output = reconstruct_text(&output_tokens);
+        assert_eq!(output, "Hello world!".to_string())
     }
 
     fn read_file_as_string(path: &path::Path) -> String {
