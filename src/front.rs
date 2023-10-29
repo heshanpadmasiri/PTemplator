@@ -4,8 +4,8 @@ pub enum ParseError {
     UnexpectedToken(Position),
     InvalidFilePath,
     FailedToOpenFile,
-    VariableNotFound(Position),
-    FileNotFound(Position),
+    VariableNotFound(Range),
+    FileNotFound(Range),
     FailedToReadLine(usize),
 }
 
@@ -34,6 +34,27 @@ impl fmt::Debug for ParseError {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Range {
+    start_pos: Position,
+    end_pos: Position,
+}
+
+impl fmt::Debug for Range {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}:{:?}", self.start_pos, self.end_pos)
+    }
+}
+
+impl From<(&Position, &Position)> for Range {
+    fn from(value: (&Position, &Position)) -> Self {
+        Range {
+            start_pos: value.0.clone(),
+            end_pos: value.1.clone(),
+        }
+    }
+}
+
 // NOTE: positions are starting from 0
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Position {
@@ -50,21 +71,14 @@ impl fmt::Debug for Position {
 // TODO: introduce range
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
-    Word {
-        text: String,
-        start_pos: Position,
-        end_pos: Position, // NOTE: end is exclusive
-    },
-    Punctuation {
-        value: char,
-        pos: Position,
-    },
+    Word { text: String, range: Range },
+    Punctuation { value: char, pos: Position },
 }
 
 impl Token {
     fn start_pos(&self) -> Position {
         match self {
-            Token::Word { start_pos, .. } => *start_pos,
+            Token::Word { range, .. } => range.start_pos,
             Token::Punctuation { pos, .. } => *pos,
         }
     }
@@ -149,8 +163,10 @@ fn create_token(chars: &[char], line: usize, start: usize, end: usize) -> Option
             } else {
                 Some(Token::Word {
                     text: char.to_string(),
-                    start_pos: pos,
-                    end_pos: Position { line, column: end },
+                    range: Range {
+                        start_pos: pos,
+                        end_pos: Position { line, column: end },
+                    },
                 })
             }
         }
@@ -164,8 +180,7 @@ fn create_token(chars: &[char], line: usize, start: usize, end: usize) -> Option
             let text = chars.iter().collect();
             Some(Token::Word {
                 text,
-                start_pos,
-                end_pos,
+                range: Range { start_pos, end_pos },
             })
         }
     }
@@ -235,7 +250,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
                 .chain(parse_tokens(rest, symbols)?.into_iter())
                 .collect())
             } else {
-                Err(ParseError::VariableNotFound(start_pos.clone()))
+                Err(ParseError::VariableNotFound((start_pos, end_pos).into()))
             }
         }
         [Token::Punctuation {
@@ -256,7 +271,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
                 .chain(parse_tokens(rest, symbols)?.into_iter())
                 .collect())
             } else {
-                Err(ParseError::FileNotFound(start_pos.clone()))
+                Err(ParseError::FileNotFound((start_pos, end_pos).into()))
             }
         }
         [Token::Punctuation { value, .. }, rest @ ..] => Ok(vec![Symbol::Word {
@@ -274,7 +289,7 @@ mod tests {
 
     use crate::front::{create_tokens, reconstruct_text, ParseError, Symbol, SymbolTable};
 
-    use super::{parse_tokens, Position};
+    use super::{parse_tokens, Position, Range};
 
     #[test]
     fn test_tokenize_simple_line() {
@@ -355,8 +370,13 @@ mod tests {
             &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
             &SymbolTable::new(&vec![], &vec![]),
         );
-        if let Err(ParseError::VariableNotFound(Position { line: 0, column: 6 })) = symbols {
-            assert!(true)
+        let err_pos: Range = (
+            &Position { line: 0, column: 6 },
+            &Position { line: 0, column: 12 },
+        )
+            .into();
+        if let Err(ParseError::VariableNotFound(r)) = symbols {
+            assert_eq!(r, err_pos)
         } else {
             assert!(false, "Expected an error");
         }
@@ -368,8 +388,13 @@ mod tests {
             &create_tokens("Hello ${...var1}! ${var2}".to_string(), 0).unwrap(),
             &SymbolTable::new(&vec![], &vec![]),
         );
-        if let Err(ParseError::FileNotFound(Position { line: 0, column: 6 })) = symbols {
-            assert!(true)
+        let err_pos: Range = (
+            &Position { line: 0, column: 6 },
+            &Position { line: 0, column: 15 },
+        )
+            .into();
+        if let Err(ParseError::FileNotFound(r)) = symbols {
+            assert_eq!(r, err_pos);
         } else {
             assert!(false, "Expected an error");
         }
@@ -419,8 +444,7 @@ mod tests {
         };
         crate::Token::Word {
             text,
-            start_pos,
-            end_pos,
+            range: Range { start_pos, end_pos },
         }
     }
 
