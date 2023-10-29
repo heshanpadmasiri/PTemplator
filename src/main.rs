@@ -4,25 +4,60 @@ use std::io::{BufRead, BufReader};
 use std::path;
 
 mod front;
-use front::{create_tokens, parse_tokens, reconstruct_text, ParseError, Token};
+use front::{create_tokens, parse_tokens, reconstruct_text, Identifier, ParseError, Token};
 
 use crate::front::SymbolTable;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let file_path = path::PathBuf::from(args[1].clone());
+    let symbol_table = symbol_table_from_args(&args[2..]);
     match tokenize_file(&file_path) {
         Err(err) => print_error(err, &file_path),
         Ok(tokens) => {
             println!("{:?} \n {}", &tokens, reconstruct_text(&tokens));
-            // TODO: get the symbols from the command line argument
-            match parse_tokens(&tokens, &SymbolTable::new(&[])) {
+            match parse_tokens(&tokens, &symbol_table) {
                 Err(err) => print_error(err, &file_path),
                 Ok(symbols) => {
                     println!("{:?}", &symbols);
                 }
             }
         }
+    }
+}
+
+fn symbol_table_from_args(args: &[String]) -> SymbolTable {
+    SymbolTable::new(
+        &args
+            .chunks(2)
+            .map(|chunk| match chunk {
+                [key, value] => (parse_identifier(key), parse_variable(value)),
+                _ => {
+                    panic!("Invalid symbol {:?}", chunk)
+                }
+            })
+            .collect::<Vec<(String, String)>>(),
+    )
+}
+
+fn parse_identifier(value: &str) -> Identifier {
+    if !value.starts_with("--") {
+        panic!(
+            "Invalid variable name {}: use --<VarName> <Var value>",
+            value
+        )
+    }
+    value[2..].to_string()
+}
+
+fn parse_variable(value: &str) -> String {
+    if value.starts_with('"') {
+        if !value.ends_with('"') {
+            panic!("Varible value not terminated {}", value)
+        }
+        value[1..(value.len() - 1)].to_string()
+    } else {
+        value.to_string()
     }
 }
 
@@ -53,6 +88,8 @@ fn tokenize_file(file_path: &path::Path) -> Result<Vec<Token>, ParseError> {
 mod test {
     use std::{fs::File, io::BufRead, io::BufReader, path};
 
+    use crate::symbol_table_from_args;
+
     #[test]
     fn test_roundtrip_simple_file() {
         let file_path = path::PathBuf::from("./test_corpus/simple.txt");
@@ -60,6 +97,16 @@ mod test {
         let expected_text = crate::front::reconstruct_text(&tokens);
         let actual_text = read_file_as_string(&file_path);
         assert_eq!(expected_text, actual_text);
+    }
+
+    #[test]
+    fn test_arg_parsing() {
+        let args: Vec<String> = ["--var1", "1", "--var2", "\"2\""]
+            .iter()
+            .map(|each| each.to_string())
+            .collect();
+        let symbols = symbol_table_from_args(&args);
+        assert_eq!(symbols.get_variable("var2").unwrap(), "2".to_string());
     }
 
     fn read_file_as_string(path: &path::Path) -> String {
