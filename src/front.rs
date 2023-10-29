@@ -49,8 +49,8 @@ impl fmt::Debug for Range {
 impl From<(&Position, &Position)> for Range {
     fn from(value: (&Position, &Position)) -> Self {
         Range {
-            start_pos: value.0.clone(),
-            end_pos: value.1.clone(),
+            start_pos: *value.0,
+            end_pos: *value.1,
         }
     }
 }
@@ -216,11 +216,11 @@ impl SymbolTable {
     }
 
     fn has_variable(&self, identifier: &str) -> bool {
-        return self.variables.contains_key(identifier);
+        self.variables.contains_key(identifier)
     }
 
     fn has_file(&self, identifier: &str) -> bool {
-        return self.files.contains_key(identifier);
+        self.files.contains_key(identifier)
     }
 }
 
@@ -231,7 +231,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
             text: text.to_string(),
         }]
         .into_iter()
-        .chain(parse_tokens(rest, symbols)?.into_iter())
+        .chain(parse_tokens(rest, symbols)?)
         .collect()),
         [Token::Punctuation {
             value: '$',
@@ -247,7 +247,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
                     identifier: identifier.to_string(),
                 }]
                 .into_iter()
-                .chain(parse_tokens(rest, symbols)?.into_iter())
+                .chain(parse_tokens(rest, symbols)?)
                 .collect())
             } else {
                 Err(ParseError::VariableNotFound((start_pos, end_pos).into()))
@@ -268,7 +268,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
                     identifier: identifier.to_string(),
                 }]
                 .into_iter()
-                .chain(parse_tokens(rest, symbols)?.into_iter())
+                .chain(parse_tokens(rest, symbols)?)
                 .collect())
             } else {
                 Err(ParseError::FileNotFound((start_pos, end_pos).into()))
@@ -278,7 +278,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
             text: value.to_string(),
         }]
         .into_iter()
-        .chain(parse_tokens(rest, symbols)?.into_iter())
+        .chain(parse_tokens(rest, symbols)?)
         .collect()),
     }
 }
@@ -319,7 +319,7 @@ mod tests {
     fn test_parsing_just_text() {
         let symbols = parse_tokens(
             &create_tokens("Hello world!".to_string(), 0).unwrap(),
-            &SymbolTable::new(&vec![], &vec![]),
+            &SymbolTable::new(&[], &[]),
         )
         .unwrap();
         assert_eq!(
@@ -342,7 +342,7 @@ mod tests {
     fn test_parsing_replace() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&vec![("var1", ""), ("var2", "")], &vec![]),
+            &SymbolTable::new(&[("var1", ""), ("var2", "")], &[]),
         )
         .unwrap();
         assert_eq!(
@@ -368,17 +368,20 @@ mod tests {
     fn test_parsing_replace_err() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&vec![], &vec![]),
+            &SymbolTable::new(&[], &[]),
         );
         let err_pos: Range = (
             &Position { line: 0, column: 6 },
-            &Position { line: 0, column: 12 },
+            &Position {
+                line: 0,
+                column: 12,
+            },
         )
             .into();
         if let Err(ParseError::VariableNotFound(r)) = symbols {
             assert_eq!(r, err_pos)
         } else {
-            assert!(false, "Expected an error");
+            panic!("Expected an error");
         }
     }
 
@@ -386,17 +389,20 @@ mod tests {
     fn test_parsing_spread_err() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${...var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&vec![], &vec![]),
+            &SymbolTable::new(&[], &[]),
         );
         let err_pos: Range = (
             &Position { line: 0, column: 6 },
-            &Position { line: 0, column: 15 },
+            &Position {
+                line: 0,
+                column: 15,
+            },
         )
             .into();
         if let Err(ParseError::FileNotFound(r)) = symbols {
             assert_eq!(r, err_pos);
         } else {
-            assert!(false, "Expected an error");
+            panic!("Expected an error");
         }
     }
 
@@ -405,8 +411,8 @@ mod tests {
         let symbols = parse_tokens(
             &create_tokens("Hello ${...var1}! ${...var2}".to_string(), 0).unwrap(),
             &SymbolTable::new(
-                &vec![],
-                &vec![
+                &[],
+                &[
                     ("var1", PathBuf::from("").as_path()),
                     ("var2", PathBuf::from("").as_path()),
                 ],
