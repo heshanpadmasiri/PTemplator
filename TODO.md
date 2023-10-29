@@ -2,9 +2,9 @@
 + [x] Tokenize the document. We have 2 kinds of tokens Words and Punctuations.
 + [x] Test tokinizer. We will do this by doing a round trip of String -> Tokens -> String
 # Parsing the document
-+ [ ] Iterate over Tokens and create symbols. We will have several kinds of Symbols
++ [x] Iterate over Tokens and create symbols. We will have several kinds of Symbols
     + Words
-    + Punctuations
+        + Punctuations: will be treated as a word as well (since no difference after parsing)
     + Substitution tokens
         + Replace
         + Spread

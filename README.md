@@ -1,7 +1,11 @@
 # PTemplator
 
 TODO: describe what we are trying to achieve 
+## Template variables
++ `${var}` Replace 
++ `${...file_path}` Spread
 TODO: describe the template
+
 
 ## Design
 + We will have several stages (similar to a complier)
