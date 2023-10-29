@@ -68,7 +68,6 @@ impl fmt::Debug for Position {
     }
 }
 
-// TODO: introduce range
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Word { text: String, range: Range },
@@ -92,6 +91,7 @@ impl std::string::ToString for Token {
         }
     }
 }
+
 pub fn reconstruct_text(tokens: &[Token]) -> String {
     let mut current_line = 0;
     let mut current_column = 0;
@@ -199,28 +199,19 @@ pub enum Symbol {
 
 pub struct SymbolTable {
     variables: std::collections::HashMap<Identifier, String>,
-    files: std::collections::HashMap<Identifier, std::path::PathBuf>,
 }
 
 impl SymbolTable {
-    pub fn new(variables: &[(&str, &str)], files: &[(&str, &std::path::Path)]) -> SymbolTable {
+    pub fn new(variables: &[(&str, &str)]) -> SymbolTable {
         let variables = variables
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        let files = files
-            .iter()
-            .map(|(identifier, path)| (identifier.to_string(), std::path::PathBuf::from(path)))
-            .collect();
-        SymbolTable { variables, files }
+        SymbolTable { variables }
     }
 
     fn has_variable(&self, identifier: &str) -> bool {
         self.variables.contains_key(identifier)
-    }
-
-    fn has_file(&self, identifier: &str) -> bool {
-        self.files.contains_key(identifier)
     }
 }
 
@@ -262,7 +253,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
             value: '}',
             pos: end_pos,
         }, rest @ ..] => {
-            if symbols.has_file(identifier) {
+            if symbols.has_variable(identifier) {
                 // TODO: check if the identifier is valid
                 Ok(vec![Symbol::Spread {
                     identifier: identifier.to_string(),
@@ -285,7 +276,6 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use crate::front::{create_tokens, reconstruct_text, ParseError, Symbol, SymbolTable};
 
@@ -319,7 +309,7 @@ mod tests {
     fn test_parsing_just_text() {
         let symbols = parse_tokens(
             &create_tokens("Hello world!".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[], &[]),
+            &SymbolTable::new(&[]),
         )
         .unwrap();
         assert_eq!(
@@ -342,7 +332,7 @@ mod tests {
     fn test_parsing_replace() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[("var1", ""), ("var2", "")], &[]),
+            &SymbolTable::new(&[("var1", ""), ("var2", "")]),
         )
         .unwrap();
         assert_eq!(
@@ -368,7 +358,7 @@ mod tests {
     fn test_parsing_replace_err() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[], &[]),
+            &SymbolTable::new(&[]),
         );
         let err_pos: Range = (
             &Position { line: 0, column: 6 },
@@ -389,7 +379,7 @@ mod tests {
     fn test_parsing_spread_err() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${...var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[], &[]),
+            &SymbolTable::new(&[]),
         );
         let err_pos: Range = (
             &Position { line: 0, column: 6 },
@@ -410,13 +400,7 @@ mod tests {
     fn test_parsing_spread() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${...var1}! ${...var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(
-                &[],
-                &[
-                    ("var1", PathBuf::from("").as_path()),
-                    ("var2", PathBuf::from("").as_path()),
-                ],
-            ),
+            &SymbolTable::new(&[("var1", "Path1"), ("var2", "Path2")]),
         )
         .unwrap();
         assert_eq!(

@@ -16,7 +16,7 @@ fn main() {
         Ok(tokens) => {
             println!("{:?} \n {}", &tokens, reconstruct_text(&tokens));
             // TODO: get the symbols from the command line argument
-            match parse_tokens(&tokens, &SymbolTable::new(&[], &[])) {
+            match parse_tokens(&tokens, &SymbolTable::new(&[])) {
                 Err(err) => print_error(err, &file_path),
                 Ok(symbols) => {
                     println!("{:?}", &symbols);
