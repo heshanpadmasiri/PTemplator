@@ -39,7 +39,7 @@ impl fmt::Debug for Position {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Word {
         text: String,
@@ -69,7 +69,6 @@ impl std::string::ToString for Token {
         }
     }
 }
-
 pub fn reconstruct_text(tokens: &[Token]) -> String {
     let mut current_line = 0;
     let mut current_column = 0;
@@ -163,11 +162,75 @@ fn create_token(chars: &[char], line: usize, start: usize, end: usize) -> Option
     }
 }
 
+pub type Identifier = String;
+
+#[derive(Debug, PartialEq)]
+pub enum Symbol {
+    Word { text: String },
+
+    Replace { identifier: Identifier },
+
+    Spread { identifier: Identifier },
+}
+
+// TODO: pass in the symbol table
+fn parse_tokens(tokens: &[Token]) -> Result<Vec<Symbol>, ParseError> {
+    match tokens {
+        [] => Ok(vec![]),
+        [Token::Word { text, .. }, rest @ ..] => Ok(vec![Symbol::Word {
+            text: text.to_string(),
+        }]
+        .into_iter()
+        .chain(parse_tokens(rest)?.into_iter())
+        .collect()),
+        [Token::Punctuation {
+            value: '$',
+            pos: start_pos,
+        }, Token::Punctuation { value: '{', .. }, Token::Word {
+            text: identifier, ..
+        }, Token::Punctuation {
+            value: '}',
+            pos: end_pos,
+        }, rest @ ..] => {
+            // TODO: check if the identifier is valid
+            Ok(vec![Symbol::Replace {
+                identifier: identifier.to_string(),
+            }]
+            .into_iter()
+            .chain(parse_tokens(rest)?.into_iter())
+            .collect())
+        }
+        [Token::Punctuation {
+            value: '$',
+            pos: start_pos,
+        }, Token::Punctuation { value: '{', .. }, Token::Punctuation { value: '.', .. }, Token::Punctuation { value: '.', .. }, Token::Punctuation { value: '.', .. }, Token::Word {
+            text: identifier, ..
+        }, Token::Punctuation {
+            value: '}',
+            pos: end_pos,
+        }, rest @ ..] => {
+            // TODO: check if the identifier is valid
+            Ok(vec![Symbol::Spread {
+                identifier: identifier.to_string(),
+            }]
+            .into_iter()
+            .chain(parse_tokens(rest)?.into_iter())
+            .collect())
+        }
+        [Token::Punctuation { value, .. }, rest @ ..] => Ok(vec![Symbol::Word {
+            text: value.to_string(),
+        }]
+        .into_iter()
+        .chain(parse_tokens(rest)?.into_iter())
+        .collect()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::front::{create_tokens, reconstruct_text};
+    use crate::front::{create_tokens, reconstruct_text, Symbol};
 
-    use super::Position;
+    use super::{parse_tokens, Position};
 
     #[test]
     fn test_tokenize_simple_line() {
@@ -191,6 +254,71 @@ mod tests {
         let tokens = create_tokens(l.clone(), 0).unwrap();
         let r = reconstruct_text(&tokens);
         assert_eq!(r, l);
+    }
+
+    #[test]
+    fn test_parsing_just_text() {
+        let symbols = parse_tokens(&create_tokens("Hello world!".to_string(), 0).unwrap()).unwrap();
+        assert_eq!(
+            symbols,
+            vec![
+                Symbol::Word {
+                    text: "Hello".to_string()
+                },
+                Symbol::Word {
+                    text: "world".to_string()
+                },
+                Symbol::Word {
+                    text: "!".to_string()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parsing_replace() {
+        let symbols =
+            parse_tokens(&create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap()).unwrap();
+        assert_eq!(
+            symbols,
+            vec![
+                Symbol::Word {
+                    text: "Hello".to_string()
+                },
+                Symbol::Replace {
+                    identifier: "var1".to_string()
+                },
+                Symbol::Word {
+                    text: "!".to_string()
+                },
+                Symbol::Replace {
+                    identifier: "var2".to_string()
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parsing_spread() {
+        let symbols =
+            parse_tokens(&create_tokens("Hello ${...var1}! ${...var2}".to_string(), 0).unwrap()).unwrap();
+        assert_eq!(
+            symbols,
+            vec![
+                Symbol::Word {
+                    text: "Hello".to_string()
+                },
+                Symbol::Spread {
+                    identifier: "var1".to_string()
+                },
+                Symbol::Word {
+                    text: "!".to_string()
+                },
+                Symbol::Spread {
+                    identifier: "var2".to_string()
+                }
+            ]
+        );
     }
 
     fn create_word(t: &str, start: usize) -> crate::Token {
