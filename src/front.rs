@@ -202,16 +202,23 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
-    pub fn new(variables: &[(&str, &str)]) -> SymbolTable {
+    pub fn new<S: AsRef<str>>(variables: &[(S, S)]) -> SymbolTable {
         let variables = variables
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.as_ref().to_string(), v.as_ref().to_string()))
             .collect();
         SymbolTable { variables }
     }
 
     fn has_variable(&self, identifier: &str) -> bool {
         self.variables.contains_key(identifier)
+    }
+
+    // XXX: this is public so that we can use this for tests in the driver. Need to think of a
+    // better way to do this
+    #[cfg(test)]
+    pub fn get_variable(&self, identifier: &str) -> Option<String> {
+        self.variables.get(identifier).cloned()
     }
 }
 
@@ -309,7 +316,7 @@ mod tests {
     fn test_parsing_just_text() {
         let symbols = parse_tokens(
             &create_tokens("Hello world!".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[]),
+            &SymbolTable::new::<&str>(&[]),
         )
         .unwrap();
         assert_eq!(
@@ -358,7 +365,7 @@ mod tests {
     fn test_parsing_replace_err() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[]),
+            &SymbolTable::new::<&str>(&[]),
         );
         let err_pos: Range = (
             &Position { line: 0, column: 6 },
@@ -379,7 +386,7 @@ mod tests {
     fn test_parsing_spread_err() {
         let symbols = parse_tokens(
             &create_tokens("Hello ${...var1}! ${var2}".to_string(), 0).unwrap(),
-            &SymbolTable::new(&[]),
+            &SymbolTable::new::<&str>(&[]),
         );
         let err_pos: Range = (
             &Position { line: 0, column: 6 },
