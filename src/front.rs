@@ -55,11 +55,32 @@ impl From<(&Position, &Position)> for Range {
     }
 }
 
+impl From<&Position> for Range {
+    fn from(value: &Position) -> Self {
+        Range {
+            start_pos: *value,
+            end_pos: Position {
+                column: value.column + 1,
+                line: value.line,
+            },
+        }
+    }
+}
+
 // NOTE: positions are starting from 0
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Position {
     line: usize,
     column: usize,
+}
+
+impl Position {
+    fn next(&self) -> Position {
+        Position {
+            line: self.line,
+            column: self.column + 1,
+        }
+    }
 }
 
 impl fmt::Debug for Position {
@@ -190,11 +211,20 @@ pub type Identifier = String;
 
 #[derive(Debug, PartialEq)]
 pub enum Symbol {
-    Word { text: String },
+    Word {
+        text: String,
+        range: Range,
+    },
 
-    Replace { identifier: Identifier },
+    Replace {
+        identifier: Identifier,
+        range: Range,
+    },
 
-    Spread { identifier: Identifier },
+    Spread {
+        identifier: Identifier,
+        range: Range,
+    },
 }
 
 pub struct SymbolTable {
@@ -225,8 +255,9 @@ impl SymbolTable {
 pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbol>, ParseError> {
     match tokens {
         [] => Ok(vec![]),
-        [Token::Word { text, .. }, rest @ ..] => Ok(vec![Symbol::Word {
+        [Token::Word { text, range }, rest @ ..] => Ok(vec![Symbol::Word {
             text: text.to_string(),
+            range: *range,
         }]
         .into_iter()
         .chain(parse_tokens(rest, symbols)?)
@@ -243,6 +274,10 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
             if symbols.has_variable(identifier) {
                 Ok(vec![Symbol::Replace {
                     identifier: identifier.to_string(),
+                    range: Range {
+                        start_pos: *start_pos,
+                        end_pos: end_pos.next(),
+                    },
                 }]
                 .into_iter()
                 .chain(parse_tokens(rest, symbols)?)
@@ -261,9 +296,12 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
             pos: end_pos,
         }, rest @ ..] => {
             if symbols.has_variable(identifier) {
-                // TODO: check if the identifier is valid
                 Ok(vec![Symbol::Spread {
                     identifier: identifier.to_string(),
+                    range: Range {
+                        start_pos: *start_pos,
+                        end_pos: end_pos.next(),
+                    },
                 }]
                 .into_iter()
                 .chain(parse_tokens(rest, symbols)?)
@@ -272,8 +310,9 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
                 Err(ParseError::FileNotFound((start_pos, end_pos).into()))
             }
         }
-        [Token::Punctuation { value, .. }, rest @ ..] => Ok(vec![Symbol::Word {
+        [Token::Punctuation { value, pos }, rest @ ..] => Ok(vec![Symbol::Word {
             text: value.to_string(),
+            range: pos.into(),
         }]
         .into_iter()
         .chain(parse_tokens(rest, symbols)?)
@@ -323,13 +362,16 @@ mod tests {
             symbols,
             vec![
                 Symbol::Word {
-                    text: "Hello".to_string()
+                    text: "Hello".to_string(),
+                    range: range("", "Hello")
                 },
                 Symbol::Word {
-                    text: "world".to_string()
+                    text: "world".to_string(),
+                    range: range("Hello ", "world")
                 },
                 Symbol::Word {
-                    text: "!".to_string()
+                    text: "!".to_string(),
+                    range: range("Hello world", "!")
                 }
             ]
         );
@@ -346,16 +388,20 @@ mod tests {
             symbols,
             vec![
                 Symbol::Word {
-                    text: "Hello".to_string()
+                    text: "Hello".to_string(),
+                    range: range("", "Hello")
                 },
                 Symbol::Replace {
-                    identifier: "var1".to_string()
+                    identifier: "var1".to_string(),
+                    range: range("Hello ", "${var1}")
                 },
                 Symbol::Word {
-                    text: "!".to_string()
+                    text: "!".to_string(),
+                    range: range("Hello ${var1}", "!")
                 },
                 Symbol::Replace {
-                    identifier: "var2".to_string()
+                    identifier: "var2".to_string(),
+                    range: range("Hello ${var1}! ", "${var2}")
                 }
             ]
         );
@@ -414,16 +460,20 @@ mod tests {
             symbols,
             vec![
                 Symbol::Word {
-                    text: "Hello".to_string()
+                    text: "Hello".to_string(),
+                    range: range("", "Hello")
                 },
                 Symbol::Spread {
-                    identifier: "var1".to_string()
+                    identifier: "var1".to_string(),
+                    range: range("Hello ", "${...var1}")
                 },
                 Symbol::Word {
-                    text: "!".to_string()
+                    text: "!".to_string(),
+                    range: range("Hello ${...var1}", "!")
                 },
                 Symbol::Spread {
-                    identifier: "var2".to_string()
+                    identifier: "var2".to_string(),
+                    range: range("Hello ${...var1}! ", "${...var2}")
                 }
             ]
         );
@@ -453,5 +503,19 @@ mod tests {
             line: 0,
         };
         crate::Token::Punctuation { value, pos }
+    }
+
+    fn range(prefix: &str, word: &str) -> Range {
+        let line = 0;
+        Range {
+            start_pos: Position {
+                line,
+                column: prefix.len(),
+            },
+            end_pos: Position {
+                line,
+                column: prefix.len() + word.len(),
+            },
+        }
     }
 }

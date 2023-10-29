@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path;
 
 mod front;
+mod back;
 use front::{create_tokens, parse_tokens, reconstruct_text, Identifier, ParseError, Token};
 
 use crate::front::SymbolTable;
