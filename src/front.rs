@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{Range, Position, SymbolTable, Symbol, Token};
+use crate::{Position, Range, Symbol, SymbolTable, Token};
 
 pub enum ParseError {
     UnexpectedToken(Position),
@@ -58,7 +58,6 @@ impl From<&Position> for Range {
         }
     }
 }
-
 
 impl Position {
     fn next(&self) -> Position {
@@ -146,7 +145,7 @@ pub fn create_tokens(text: String, line: usize) -> Result<Vec<Token>, ParseError
             }
         }
     }
-    if char_buffer.len() > 0 {
+    if !char_buffer.is_empty() {
         tokens.push(create_token(&char_buffer, line, start, text.len()));
     }
     Ok(tokens.into_iter().flatten().collect())
