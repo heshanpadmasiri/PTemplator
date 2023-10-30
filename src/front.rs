@@ -7,7 +7,6 @@ pub enum ParseError {
     InvalidFilePath,
     FailedToOpenFile,
     VariableNotFound(Range),
-    FileNotFound(Range),
     FailedToReadLine(usize),
 }
 
@@ -28,9 +27,6 @@ impl fmt::Debug for ParseError {
             }
             Self::VariableNotFound(pos) => {
                 write!(f, "{:?} : variable not found", pos)
-            }
-            Self::FileNotFound(pos) => {
-                write!(f, "{:?} : file not found", pos)
             }
         }
     }
@@ -150,6 +146,9 @@ pub fn create_tokens(text: String, line: usize) -> Result<Vec<Token>, ParseError
             }
         }
     }
+    if char_buffer.len() > 0 {
+        tokens.push(create_token(&char_buffer, line, start, text.len()));
+    }
     Ok(tokens.into_iter().flatten().collect())
 }
 
@@ -246,7 +245,7 @@ pub fn parse_tokens(tokens: &[Token], symbols: &SymbolTable) -> Result<Vec<Symbo
                 .chain(parse_tokens(rest, symbols)?)
                 .collect())
             } else {
-                Err(ParseError::FileNotFound((start_pos, end_pos).into()))
+                Err(ParseError::VariableNotFound((start_pos, end_pos).into()))
             }
         }
         [Token::Punctuation { value, pos }, rest @ ..] => Ok(vec![Symbol::Word {
@@ -381,7 +380,7 @@ mod tests {
             },
         )
             .into();
-        if let Err(ParseError::FileNotFound(r)) = symbols {
+        if let Err(ParseError::VariableNotFound(r)) = symbols {
             assert_eq!(r, err_pos);
         } else {
             panic!("Expected an error");

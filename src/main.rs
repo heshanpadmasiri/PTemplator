@@ -80,7 +80,7 @@ fn main() {
             Err(err) => print_error(err, &file_path),
             Ok(symbols) => {
                 let output_tokens = to_output_tokens(&symbols, &symbol_table);
-                println!("{}", reconstruct_text(&output_tokens));
+                println!("{}", reconstruct_text(&output_tokens.unwrap()));
             }
         },
     }
@@ -173,12 +173,23 @@ mod test {
     }
 
     #[test]
+    fn test_roundtrip_spread_simple() {
+        let file_path = path::PathBuf::from("./test_corpus/spread.txt");
+        let symbol_table = SymbolTable::new::<&str>(&[("file1", "./test_corpus/spread_content.txt")]);
+        let tokens = create_tokens(read_file_as_string(&file_path), 0).unwrap();
+        let symbols = parse_tokens(&tokens, &symbol_table).unwrap();
+        let output_tokens = to_output_tokens(&symbols, &symbol_table);
+        let output = reconstruct_text(&output_tokens.unwrap());
+        assert_eq!(output, "bb aa Foo Bar\nBaz cc".to_string())
+    }
+
+    #[test]
     fn test_roundtrip_replace_simple() {
         let symbol_table = SymbolTable::new::<&str>(&[("var1", "world")]);
         let tokens = create_tokens("Hello ${var1}!".to_string(), 0).unwrap();
         let symbols = parse_tokens(&tokens, &symbol_table).unwrap();
         let output_tokens = to_output_tokens(&symbols, &symbol_table);
-        let output = reconstruct_text(&output_tokens);
+        let output = reconstruct_text(&output_tokens.unwrap());
         assert_eq!(output, "Hello world!".to_string())
     }
 

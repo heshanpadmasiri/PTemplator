@@ -1,6 +1,27 @@
+use std::{fmt, fs, path};
+
 use crate::{Position, Range, Symbol, SymbolTable, Token};
 
-pub fn to_output_tokens(symbols: &[Symbol], symbol_table: &SymbolTable) -> Vec<Token> {
+pub enum TextGenError {
+    NoSuchFile(Range),
+    FailedToReadFile(Range),
+}
+
+impl fmt::Debug for TextGenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TextGenError::NoSuchFile(range) => write!(f, "{:?} : Invalid file path", range),
+            TextGenError::FailedToReadFile(range) => {
+                write!(f, "{:?} : Failed to read file at path", range)
+            }
+        }
+    }
+}
+
+pub fn to_output_tokens(
+    symbols: &[Symbol],
+    symbol_table: &SymbolTable,
+) -> Result<Vec<Token>, TextGenError> {
     // TODO: think of how to do this using an iterator
     let mut tokens = vec![];
     let mut cursor_position = Position { line: 0, column: 0 };
@@ -11,7 +32,7 @@ pub fn to_output_tokens(symbols: &[Symbol], symbol_table: &SymbolTable) -> Vec<T
             symbol_table,
             &last_token_end_position,
             &cursor_position,
-        );
+        )?;
         if let Token::Word { range, .. } = &token {
             cursor_position = range.end_pos;
             last_token_end_position = symbol.end_pos();
@@ -20,7 +41,7 @@ pub fn to_output_tokens(symbols: &[Symbol], symbol_table: &SymbolTable) -> Vec<T
             unreachable!("to_token must always return a word");
         }
     }
-    tokens
+    Ok(tokens)
 }
 
 impl Symbol {
@@ -38,20 +59,33 @@ fn to_token(
     symbol_table: &SymbolTable,
     last_token_end_position: &Position,
     cursor_position: &Position,
-) -> Token {
+) -> Result<Token, TextGenError> {
     match symbol {
-        Symbol::Word { text, range } => Token::Word {
+        Symbol::Word { text, range } => Ok(Token::Word {
             text: text.to_string(),
             range: calculate_new_range(last_token_end_position, cursor_position, range),
-        },
+        }),
         Symbol::Replace { identifier, range } => {
             let text = symbol_table.get_variable(identifier).unwrap(); // We have already checked
             let range = calculate_replacement_range(cursor_position, &range.start_pos, &text);
-            Token::Word { text, range }
+            Ok(Token::Word { text, range })
         }
-        Symbol::Spread { .. } => {
-            todo!()
+        Symbol::Spread { identifier, range } => {
+            let text = get_file_content(symbol_table.get_variable(identifier).unwrap(), *range)?;
+            let range = calculate_replacement_range(cursor_position, &range.start_pos, &text);
+            Ok(Token::Word { text, range })
         }
+    }
+}
+
+fn get_file_content(file_path: String, range: Range) -> Result<String, TextGenError> {
+    let file_path = path::PathBuf::from(file_path);
+    if !file_path.is_file() {
+        return Err(TextGenError::NoSuchFile(range));
+    }
+    match fs::read_to_string(file_path) {
+        Ok(text) => Ok(text.trim().to_string()),
+        Err(_) => Err(TextGenError::FailedToReadFile(range)),
     }
 }
 
@@ -68,10 +102,9 @@ fn calculate_replacement_range(
         };
         Range { start_pos, end_pos }
     } else {
-        assert_eq!(replacement_start_pos.line, cursor_position.line);
         let offset = replacement_start_pos.column - cursor_position.column;
         let column = cursor_position.column + offset;
-        let line = replacement_start_pos.line;
+        let line = std::cmp::max(replacement_start_pos.line, cursor_position.line);
         let start_pos = Position { line, column };
         let end_pos = Position {
             line,
